@@ -3,6 +3,7 @@ package caddyhttp
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -260,6 +261,35 @@ func TestResponseRecorderSwitchingProtocolsIsHijackAware(t *testing.T) {
 	}
 	if got := w.Written(); got != "" {
 		t.Fatalf("unexpected buffered body write after hijack: %q", got)
+	}
+}
+
+func TestResponseRecorderFlushAfterHijack(t *testing.T) {
+	w := newHijackRespWriter()
+	var buf bytes.Buffer
+
+	rr := NewResponseRecorder(w, &buf, func(status int, header http.Header) bool {
+		return true
+	})
+
+	if err := http.NewResponseController(rr).Flush(); err != nil {
+		t.Fatalf("Flush() before hijack returned error: %v", err)
+	}
+
+	hj, ok := rr.(http.Hijacker)
+	if !ok {
+		t.Fatal("response recorder does not implement http.Hijacker")
+	}
+	conn, _, err := hj.Hijack()
+	if err != nil {
+		t.Fatalf("Hijack() error = %v", err)
+	}
+	defer conn.Close()
+
+	// a hijacked connection must not be flushed on the recorder's behalf; the
+	// server has released it, so flushing would panic (see #8151)
+	if err := http.NewResponseController(rr).Flush(); !errors.Is(err, http.ErrHijacked) {
+		t.Fatalf("Flush() after hijack = %v, want %v", err, http.ErrHijacked)
 	}
 }
 

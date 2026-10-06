@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -1466,6 +1467,58 @@ func TestServer_ServeHTTP_WriteTimeoutLogsWriteError(t *testing.T) {
 	}
 
 	eventuallyLogged(t, buf, `"write_error"`, "i/o timeout", `"status":200`)
+}
+
+// An upgraded (hijacked) connection which outlives the write timeout must not
+// trigger the deferred flush probe, which would otherwise panic by flushing a
+// connection that net/http has already released from the server.
+// See https://github.com/caddyserver/caddy/issues/8151
+func TestServer_ServeHTTP_HijackedConnectionOutlivesWriteTimeout(t *testing.T) {
+	errBuf := new(syncBuffer)
+	s := &Server{
+		logger:       zap.NewNop(),
+		errorLogger:  zap.NewNop(),
+		accessLogger: testLogger(new(syncBuffer).Write),
+		Logs:         &ServerLogConfig{},
+		WriteTimeout: caddy.Duration(50 * time.Millisecond),
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			w.Header().Set("Connection", "Upgrade")
+			w.Header().Set("Upgrade", "test")
+			w.WriteHeader(http.StatusSwitchingProtocols)
+
+			rc := http.NewResponseController(w)
+			conn, _, err := rc.Hijack()
+			if err != nil {
+				return err
+			}
+			defer conn.Close()
+
+			// hold the upgraded connection open longer than the write timeout,
+			// as an established tunnel is expected to
+			time.Sleep(200 * time.Millisecond)
+			return nil
+		}),
+	}
+
+	ts := httptest.NewUnstartedServer(http.HandlerFunc(s.ServeHTTP))
+	ts.Config.ErrorLog = log.New(errBuf, "", 0)
+	ts.Start()
+	t.Cleanup(ts.Close)
+
+	conn, err := net.DialTimeout("tcp", ts.Listener.Addr().String(), 2*time.Second)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	fmt.Fprintf(conn, "GET / HTTP/1.1\r\nHost: localhost\r\nConnection: Upgrade\r\nUpgrade: test\r\n\r\n")
+	resp, err := http.ReadResponse(bufio.NewReader(conn), &http.Request{Method: "GET"})
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
+
+	// wait for the handler to return so the deferred flush probe has run on the
+	// released connection; without the fix this panics and net/http logs
+	// "http: panic serving ..." to the server's ErrorLog
+	time.Sleep(300 * time.Millisecond)
+	assert.NotContains(t, errBuf.String(), "panic serving")
 }
 
 // A handler that takes longer than the configured write timeout but whose
