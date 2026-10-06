@@ -26,9 +26,10 @@ import (
 
 func TestMarshalLogTLSConnState(t *testing.T) {
 	for i, tc := range []struct {
-		name  string
-		state tls.ConnectionState
-		curve float64
+		name     string
+		state    tls.ConnectionState
+		hasCurve bool
+		curve    float64
 	}{
 		{
 			name: "hybrid post-quantum key exchange",
@@ -37,7 +38,8 @@ func TestMarshalLogTLSConnState(t *testing.T) {
 				CipherSuite: tls.TLS_AES_256_GCM_SHA384,
 				CurveID:     tls.X25519MLKEM768,
 			},
-			curve: 4588,
+			hasCurve: true,
+			curve:    4588,
 		},
 		{
 			name: "no key exchange",
@@ -45,7 +47,6 @@ func TestMarshalLogTLSConnState(t *testing.T) {
 				Version:     tls.VersionTLS12,
 				CipherSuite: tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
 			},
-			curve: 0,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -62,8 +63,12 @@ func TestMarshalLogTLSConnState(t *testing.T) {
 			if !ok {
 				t.Fatalf("Test %d (%s): expected a tls object, got %#v", i, tc.name, out["tls"])
 			}
-			if got := tlsObj["curve"]; got != tc.curve {
+			got, present := tlsObj["curve"]
+			if tc.hasCurve && (!present || got != tc.curve) {
 				t.Fatalf("Test %d (%s): curve = %v, want %v", i, tc.name, got, tc.curve)
+			}
+			if !tc.hasCurve && present {
+				t.Fatalf("Test %d (%s): expected curve to be omitted, got %v", i, tc.name, got)
 			}
 		})
 	}
