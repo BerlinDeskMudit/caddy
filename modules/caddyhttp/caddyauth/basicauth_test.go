@@ -82,6 +82,64 @@ func TestBasicAuthProvisionExpandsKnownPlaceholdersInUsername(t *testing.T) {
 	}
 }
 
+func TestBasicAuthProvisionRejectsDuplicatedUsernamesAfterExpansion(t *testing.T) {
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+
+	for i, tc := range []struct {
+		name      string
+		env       map[string]string
+		usernames []string
+		wantError bool
+	}{
+		{
+			name:      "literal duplicates",
+			usernames: []string{"carol", "carol"},
+			wantError: true,
+		},
+		{
+			name:      "distinct placeholders expanding to the same value",
+			env:       map[string]string{"X": "carol", "Y": "carol"},
+			usernames: []string{"{env.X}", "{env.Y}"},
+			wantError: true,
+		},
+		{
+			name:      "literal username colliding with a placeholder",
+			env:       map[string]string{"Y": "carol"},
+			usernames: []string{"carol", "{env.Y}"},
+			wantError: true,
+		},
+		{
+			name:      "same placeholder repeated",
+			env:       map[string]string{"X": "carol"},
+			usernames: []string{"{env.X}", "{env.X}"},
+			wantError: true,
+		},
+		{
+			name:      "distinct expansions",
+			env:       map[string]string{"X": "carol", "Z": "dave"},
+			usernames: []string{"{env.X}", "{env.Z}"},
+			wantError: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			accounts := make([]Account, 0, len(tc.usernames))
+			for _, username := range tc.usernames {
+				accounts = append(accounts, Account{Username: username, Password: testBasicAuthHash})
+			}
+			hba := HTTPBasicAuth{AccountList: accounts}
+			if err := hba.Provision(ctx); tc.wantError && err == nil {
+				t.Fatalf("Test %d (%s): expected error, got none; accounts %q", i, tc.name, accountUsernames(hba))
+			} else if !tc.wantError && err != nil {
+				t.Fatalf("Test %d (%s): unexpected error: %v", i, tc.name, err)
+			}
+		})
+	}
+}
+
 func TestBasicAuthProvisionRejectsBracedPasswordInsteadOfRewritingIt(t *testing.T) {
 	hba := HTTPBasicAuth{
 		AccountList: []Account{
