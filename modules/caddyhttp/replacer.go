@@ -604,6 +604,11 @@ func getTLSReplacement(state *tls.ConnectionState, key string) (any, bool) {
 		return caddytls.ProtocolName(state.Version), true
 	case "cipher_suite":
 		return tls.CipherSuiteName(state.CipherSuite), true
+	case "curve":
+		if state.CurveID != 0 {
+			return state.CurveID.String(), true
+		}
+		return "", true
 	case "resumed":
 		return state.DidResume, true
 	case "proto":

@@ -75,6 +75,7 @@ func (t LoggableTLSConnState) MarshalLogObject(enc zapcore.ObjectEncoder) error 
 	enc.AddBool("resumed", t.DidResume)
 	enc.AddUint16("version", t.Version)
 	enc.AddUint16("cipher_suite", t.CipherSuite)
+	enc.AddUint16("curve", uint16(t.CurveID))
 	enc.AddString("proto", t.NegotiatedProtocol)
 	enc.AddString("server_name", t.ServerName)
 	enc.AddBool("ech", t.ECHAccepted)

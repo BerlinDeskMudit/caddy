@@ -90,6 +90,7 @@ func init() {
 // `{http.request.scheme}` | The request scheme, typically `http` or `https`
 // `{http.request.tls.version}` | The TLS version name
 // `{http.request.tls.cipher_suite}` | The TLS cipher suite
+// `{http.request.tls.curve}` | The TLS key exchange curve (empty if no key exchange was performed)
 // `{http.request.tls.resumed}` | The TLS connection resumed a previous connection
 // `{http.request.tls.proto}` | The negotiated next protocol
 // `{http.request.tls.proto_mutual}` | The negotiated next protocol was advertised by the server
